@@ -7,14 +7,18 @@ import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.User;
 import ru.relex.dao.AppUserDAO;
 import ru.relex.dao.RawDataDAO;
+import ru.relex.entity.AppDocument;
+import ru.relex.entity.AppPhoto;
 import ru.relex.entity.AppUser;
 import ru.relex.entity.RawData;
-import ru.relex.entity.enums.UserState;
+import ru.relex.exceptions.UploadFileException;
+import ru.relex.service.FileService;
 import ru.relex.service.MainService;
 import ru.relex.service.ProducerService;
+import ru.relex.service.enums.ServiceCommand;
 
 import static ru.relex.entity.enums.UserState.*;
-import static ru.relex.service.enums.ServiceCommands.*;
+import static ru.relex.service.enums.ServiceCommand.*;
 
 @Service
 @Log4j
@@ -23,11 +27,16 @@ public class MainServiceImpl implements MainService {
     private final RawDataDAO rawDataDAO;
     private final ProducerService producerService;
     private final AppUserDAO appUserDAO;
+    private final FileService fileService;
 
-    public MainServiceImpl(RawDataDAO rawDataDAO, ProducerService producerService, AppUserDAO appUserDAO) {
+    public MainServiceImpl(RawDataDAO rawDataDAO,
+                           ProducerService producerService,
+                           AppUserDAO appUserDAO,
+                           FileService fileService) {
         this.rawDataDAO = rawDataDAO;
         this.producerService = producerService;
         this.appUserDAO = appUserDAO;
+        this.fileService = fileService;
     }
 
     @Override
@@ -40,6 +49,7 @@ public class MainServiceImpl implements MainService {
         var text = update.getMessage().getText();
         var output = "";
 
+        var serviceCommand = ServiceCommand.fromValue(text);
         if (CANCEL.equals(text)) {
             output = cancelProcess(appUser);
         } else if (BASIC_STATE.equals(userState)) {
@@ -61,33 +71,49 @@ public class MainServiceImpl implements MainService {
         saveRawData(update);
         var appUser = findOrSaveAppUser(update);
         var chatId = update.getMessage().getChatId();
-        
-        if (isNotAllowToSendContent(chatId, appUser)){
+
+        if (isNotAllowToSendContent(chatId, appUser)) {
             return;
         }
 
-        //TODO добавить ссылку для скачивания
-        var answer = "Документ успешно загружен! Ссылка для скачивания: заглушка.рф";
-        sendAnswer(answer, chatId);
+        try {
+            AppDocument doc = fileService.processDoc(update.getMessage());
+            //TODO Добавить генерацию ссылки для скачивания документа
+            var answer = "Документ успешно загружен!\n" +
+                    "Ссылка для скачивания: ссылкаюрф";
+            sendAnswer(answer, chatId);
+        } catch (UploadFileException ex) {
+            log.error(ex);
+            String error = "Попытка загрузки провалилась. Повторите попытку позже.";
+            sendAnswer(error, chatId);
+        }
     }
+
     @Override
     public void processPhotoMessage(Update update) {
         saveRawData(update);
         var appUser = findOrSaveAppUser(update);
         var chatId = update.getMessage().getChatId();
 
-        if (isNotAllowToSendContent(chatId, appUser)){
+        if (isNotAllowToSendContent(chatId, appUser)) {
             return;
         }
 
-        //TODO добавить ссылку для скачивания
-        var answer = "Фотография успешно загружена! Ссылка для скачивания: заглушка.рф";
-        sendAnswer(answer, chatId);
+        try {
+            AppPhoto photo = fileService.processPhoto(update.getMessage());
+            //TODO добавить ссылку для скачивания
+            var answer = "Фотография успешно загружена! Ссылка для скачивания: заглушка.рф";
+            sendAnswer(answer, chatId);
+        } catch (UploadFileException ex) {
+            log.error(ex);
+            String error = "Попытка загрузки провалилась. Повторите попытку позже.";
+            sendAnswer(error, chatId);
+        }
     }
 
     private boolean isNotAllowToSendContent(Long chatId, AppUser appUser) {
         var userState = appUser.getState();
-        if (!appUser.getIsActive()){
+        if (!appUser.getIsActive()) {
             var error = "Зарегистрируйтесь или активируйте свою учетную запись для загрузки контента.";
             sendAnswer(error, chatId);
             return true;
@@ -107,12 +133,13 @@ public class MainServiceImpl implements MainService {
     }
 
     private String processServiceCommand(AppUser appUser, String cmd) {
-        if (REGISTRATION.equals(cmd)){
+        var serviceCommand = ServiceCommand.fromValue(cmd);
+        if (REGISTRATION.equals(serviceCommand)) {
             //TODO добавить регистрацию
             return "Временно недоступно";
-        } else if (HELP.equals(cmd)) {
+        } else if (HELP.equals(serviceCommand)) {
             return help();
-        } else if (START.equals(cmd)) {
+        } else if (START.equals(serviceCommand)) {
             return "Приветствую! Чтобы просмотреть список доступных команд введите /help";
         } else {
             return "Неизвестная команда! Чтобы просмотреть список доступных команд введите /help";
@@ -131,7 +158,7 @@ public class MainServiceImpl implements MainService {
         return "Команда отменена!";
     }
 
-    private AppUser findOrSaveAppUser(Update update){
+    private AppUser findOrSaveAppUser(Update update) {
 
         User telegramUser = update.getMessage().getFrom();
 
