@@ -15,6 +15,7 @@ import ru.relex.exceptions.UploadFileException;
 import ru.relex.service.FileService;
 import ru.relex.service.MainService;
 import ru.relex.service.ProducerService;
+import ru.relex.service.enums.LinkType;
 import ru.relex.service.enums.ServiceCommand;
 
 import static ru.relex.entity.enums.UserState.*;
@@ -78,9 +79,9 @@ public class MainServiceImpl implements MainService {
 
         try {
             AppDocument doc = fileService.processDoc(update.getMessage());
-            //TODO Добавить генерацию ссылки для скачивания документа
+            String link = fileService.generateLink(doc.getId(), LinkType.GET_DOC);
             var answer = "Документ успешно загружен!\n" +
-                    "Ссылка для скачивания: ссылкаюрф";
+                    "Ссылка для скачивания: " + link;
             sendAnswer(answer, chatId);
         } catch (UploadFileException ex) {
             log.error(ex);
@@ -101,8 +102,8 @@ public class MainServiceImpl implements MainService {
 
         try {
             AppPhoto photo = fileService.processPhoto(update.getMessage());
-            //TODO добавить ссылку для скачивания
-            var answer = "Фотография успешно загружена! Ссылка для скачивания: заглушка.рф";
+            String link = fileService.generateLink(photo.getId(), LinkType.GET_PHOTO);
+            var answer = "Фотография успешно загружена! Ссылка для скачивания: " + link;
             sendAnswer(answer, chatId);
         } catch (UploadFileException ex) {
             log.error(ex);
